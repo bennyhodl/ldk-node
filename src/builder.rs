@@ -1,3 +1,4 @@
+use crate::backend::SyncClient;
 use crate::event::EventQueue;
 use crate::gossip::GossipSource;
 use crate::io;
@@ -11,11 +12,13 @@ use crate::types::{
 };
 use crate::wallet::Wallet;
 use crate::LogLevel;
-use crate::{
-	Config, Node, BDK_CLIENT_CONCURRENCY, BDK_CLIENT_STOP_GAP, DEFAULT_ESPLORA_SERVER_URL,
-	WALLET_KEYS_SEED_LEN,
-};
+use crate::{Config, Node, WALLET_KEYS_SEED_LEN};
 
+#[cfg(feature = "esplora-async")]
+use crate::{BDK_CLIENT_CONCURRENCY, BDK_CLIENT_STOP_GAP, DEFAULT_ESPLORA_SERVER_URL};
+
+#[cfg(feature = "bitcoind")]
+use bdk::blockchain::{ConfigurableBlockchain, RpcBlockchain};
 use lightning::chain::{chainmonitor, BestBlock, Watch};
 use lightning::ln::channelmanager::{self, ChainParameters, ChannelManagerReadArgs};
 use lightning::ln::msgs::{RoutingMessageHandler, SocketAddress};
@@ -35,10 +38,11 @@ use lightning::util::ser::ReadableArgs;
 
 use lightning_persister::fs_store::FilesystemStore;
 
-use lightning_transaction_sync::EsploraSyncClient;
-
 use bdk::bitcoin::secp256k1::Secp256k1;
+#[cfg(feature = "esplora-async")]
 use bdk::blockchain::esplora::EsploraBlockchain;
+#[cfg(feature = "bitcoind")]
+use bdk::blockchain::rpc::{Auth, RpcConfig};
 use bdk::database::SqliteDatabase;
 use bdk::template::Bip84;
 
@@ -59,7 +63,10 @@ use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
 enum ChainDataSourceConfig {
+	#[cfg(feature = "esplora-async")]
 	Esplora(String),
+	#[cfg(feature = "bitcoind")]
+	Bitcoind(RpcConfig),
 }
 
 #[derive(Debug, Clone)]
@@ -190,9 +197,26 @@ impl NodeBuilder {
 		self
 	}
 
+	#[cfg(feature = "esplora-async")]
 	/// Configures the [`Node`] instance to source its chain data from the given Esplora server.
 	pub fn set_esplora_server(&mut self, esplora_server_url: String) -> &mut Self {
 		self.chain_data_source_config = Some(ChainDataSourceConfig::Esplora(esplora_server_url));
+		self
+	}
+
+	#[cfg(feature = "bitcoind")]
+	/// Configures the [`Node`] instance to source its chain data from the given Bitcoin core RPC server.
+	pub fn set_bitcoind_server(
+		&mut self, bitcoind_url: String, username: String, password: String,
+	) -> &mut Self {
+		self.chain_data_source_config = Some(ChainDataSourceConfig::Bitcoind(RpcConfig {
+			url: bitcoind_url,
+			auth: Auth::UserPass { username, password },
+			network: self.config.network,
+			wallet_name: "ldk-node".to_string(),
+			sync_params: None,
+		}));
+
 		self
 	}
 
@@ -441,23 +465,50 @@ fn build_with_store_internal<K: KVStore + Sync + Send + 'static>(
 		BuildError::WalletSetupFailed
 	})?;
 
+	#[cfg(feature = "esplora-async")]
 	let (blockchain, tx_sync) = match chain_data_source_config {
 		Some(ChainDataSourceConfig::Esplora(server_url)) => {
-			let tx_sync = Arc::new(EsploraSyncClient::new(server_url.clone(), Arc::clone(&logger)));
+			let tx_sync = Arc::new(SyncClient::new(server_url.clone(), Arc::clone(&logger)));
+
 			let blockchain =
 				EsploraBlockchain::from_client(tx_sync.client().clone(), BDK_CLIENT_STOP_GAP)
 					.with_concurrency(BDK_CLIENT_CONCURRENCY);
+
 			(blockchain, tx_sync)
 		}
 		None => {
 			// Default to Esplora client.
 			let server_url = DEFAULT_ESPLORA_SERVER_URL.to_string();
-			let tx_sync = Arc::new(EsploraSyncClient::new(server_url, Arc::clone(&logger)));
+			let tx_sync = Arc::new(SyncClient::new(server_url.clone(), Arc::clone(&logger)));
+
 			let blockchain =
 				EsploraBlockchain::from_client(tx_sync.client().clone(), BDK_CLIENT_STOP_GAP)
 					.with_concurrency(BDK_CLIENT_CONCURRENCY);
+
 			(blockchain, tx_sync)
 		}
+	};
+
+	#[cfg(feature = "bitcoind")]
+	let (blockchain, tx_sync) = match chain_data_source_config {
+		Some(ChainDataSourceConfig::Bitcoind(config)) => {
+			let (username, password) = match config.clone().auth {
+				Auth::UserPass { username, password } => (username, password),
+				_ => ("ben".to_string(), "ben".to_string()),
+			};
+
+			let tx_sync = Arc::new(SyncClient::new(
+				config.url.clone(),
+				Arc::clone(&logger),
+				username,
+				password,
+			));
+
+			let blockchain = RpcBlockchain::from_config(config).unwrap();
+
+			(blockchain, tx_sync)
+		}
+		None => return Err(BuildError::InvalidChannelMonitor),
 	};
 
 	let runtime = Arc::new(RwLock::new(None));

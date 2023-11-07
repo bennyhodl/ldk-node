@@ -1,3 +1,4 @@
+use crate::backend::SyncClient;
 use crate::logger::FilesystemLogger;
 use crate::wallet::{Wallet, WalletKeysManager};
 
@@ -15,7 +16,6 @@ use lightning::util::config::ChannelConfig as LdkChannelConfig;
 use lightning::util::config::MaxDustHTLCExposure as LdkMaxDustHTLCExposure;
 use lightning::util::ser::{Readable, Writeable, Writer};
 use lightning_net_tokio::SocketDescriptor;
-use lightning_transaction_sync::EsploraSyncClient;
 
 use bitcoin::secp256k1::PublicKey;
 use bitcoin::OutPoint;
@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 pub(crate) type ChainMonitor<K> = chainmonitor::ChainMonitor<
 	InMemorySigner,
-	Arc<EsploraSyncClient<Arc<FilesystemLogger>>>,
+	Arc<SyncClient<Arc<FilesystemLogger>>>,
 	Arc<Wallet<bdk::database::SqliteDatabase, Arc<FilesystemLogger>>>,
 	Arc<Wallet<bdk::database::SqliteDatabase, Arc<FilesystemLogger>>>,
 	Arc<FilesystemLogger>,

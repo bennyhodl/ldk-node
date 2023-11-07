@@ -319,6 +319,7 @@ fn channel_open_fails_when_funds_insufficient() {
 }
 
 #[test]
+#[cfg(feature = "esplora-async")]
 fn connect_to_public_testnet_esplora() {
 	let mut config = random_config();
 	config.network = bitcoin::Network::Testnet;
@@ -330,6 +331,7 @@ fn connect_to_public_testnet_esplora() {
 }
 
 #[test]
+#[cfg(feature = "esplora-async")]
 fn start_stop_reinit() {
 	let (bitcoind, electrsd) = setup_bitcoind_and_electrsd();
 	let config = random_config();

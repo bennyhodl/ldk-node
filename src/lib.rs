@@ -75,6 +75,7 @@
 #![allow(ellipsis_inclusive_range_patterns)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
+mod backend;
 mod builder;
 mod error;
 mod event;
@@ -104,6 +105,10 @@ pub use types::ChannelConfig;
 
 pub use io::utils::generate_entropy_mnemonic;
 
+#[cfg(any(feature = "bitcoind", feature = "esplora-async"))]
+#[macro_use]
+extern crate bdk_macros;
+
 #[cfg(feature = "uniffi")]
 use {bip39::Mnemonic, bitcoin::OutPoint, lightning::ln::PaymentSecret, uniffi_types::*};
 
@@ -113,6 +118,7 @@ pub use builder::BuildError;
 #[cfg(not(feature = "uniffi"))]
 pub use builder::NodeBuilder as Builder;
 
+use backend::SyncClient;
 use event::{EventHandler, EventQueue};
 use gossip::GossipSource;
 use payment_store::PaymentStore;
@@ -136,8 +142,6 @@ use lightning::util::config::{ChannelHandshakeConfig, UserConfig};
 pub use lightning::util::logger::Level as LogLevel;
 
 use lightning_background_processor::process_events_async;
-
-use lightning_transaction_sync::EsploraSyncClient;
 
 use lightning::routing::router::{PaymentParameters, RouteParameters};
 use lightning_invoice::{payment, Bolt11Invoice, Currency};
@@ -171,12 +175,15 @@ const DEFAULT_LOG_LEVEL: LogLevel = LogLevel::Debug;
 
 // The 'stop gap' parameter used by BDK's wallet sync. This seems to configure the threshold
 // number of derivation indexes after which BDK stops looking for new scripts belonging to the wallet.
+#[cfg(feature = "esplora-async")]
 const BDK_CLIENT_STOP_GAP: usize = 20;
 
 // The number of concurrent requests made against the API provider.
+#[cfg(feature = "esplora-async")]
 const BDK_CLIENT_CONCURRENCY: u8 = 4;
 
 // The default Esplora server we're using.
+#[cfg(feature = "esplora-async")]
 const DEFAULT_ESPLORA_SERVER_URL: &str = "https://blockstream.info/api";
 
 // The timeout after which we abandon retrying failed payments.
@@ -285,7 +292,7 @@ pub struct Node<K: KVStore + Sync + Send + 'static> {
 	stop_receiver: tokio::sync::watch::Receiver<()>,
 	config: Arc<Config>,
 	wallet: Arc<Wallet<bdk::database::SqliteDatabase, Arc<FilesystemLogger>>>,
-	tx_sync: Arc<EsploraSyncClient<Arc<FilesystemLogger>>>,
+	tx_sync: Arc<SyncClient<Arc<FilesystemLogger>>>,
 	event_queue: Arc<EventQueue<K, Arc<FilesystemLogger>>>,
 	channel_manager: Arc<ChannelManager<K>>,
 	chain_monitor: Arc<ChainMonitor<K>>,

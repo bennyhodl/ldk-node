@@ -190,6 +190,7 @@ pub(crate) fn setup_two_nodes(
 	(node_a, node_b)
 }
 
+#[cfg(feature = "esplora-async")]
 pub(crate) fn setup_node(electrsd: &ElectrsD, config: Config) -> Node<TestSyncStore> {
 	let esplora_url = format!("http://{}", electrsd.esplora_url.as_ref().unwrap());
 	let mut builder = NodeBuilder::from_config(config.clone());

@@ -116,8 +116,15 @@ impl From<bdk::Error> for Error {
 	}
 }
 
+/// REMOVE ME!
 impl From<lightning_transaction_sync::TxSyncError> for Error {
 	fn from(_e: lightning_transaction_sync::TxSyncError) -> Self {
+		Self::TxSyncFailed
+	}
+}
+
+impl From<crate::backend::error::TxSyncError> for Error {
+	fn from(_e: crate::backend::error::TxSyncError) -> Self {
 		Self::TxSyncFailed
 	}
 }

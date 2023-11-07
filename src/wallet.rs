@@ -2,6 +2,8 @@ use crate::logger::{log_error, log_info, log_trace, Logger};
 
 use crate::Error;
 
+use crate::backend::blockchain::BlockchainType;
+
 use lightning::chain::chaininterface::{
 	BroadcasterInterface, ConfirmationTarget, FeeEstimator, FEERATE_FLOOR_SATS_PER_KW,
 };
@@ -15,7 +17,7 @@ use lightning::sign::{
 
 use lightning::util::message_signing;
 
-use bdk::blockchain::{Blockchain, EsploraBlockchain};
+use bdk::blockchain::Blockchain;
 use bdk::database::BatchDatabase;
 use bdk::wallet::AddressIndex;
 use bdk::{FeeRate, SignOptions, SyncOptions};
@@ -37,7 +39,7 @@ where
 	L::Target: Logger,
 {
 	// A BDK blockchain used for wallet sync.
-	blockchain: EsploraBlockchain,
+	blockchain: BlockchainType,
 	// A BDK on-chain wallet.
 	inner: Mutex<bdk::Wallet<D>>,
 	// A cache storing the most recently retrieved fee rate estimations.
@@ -53,7 +55,7 @@ where
 	L::Target: Logger,
 {
 	pub(crate) fn new(
-		blockchain: EsploraBlockchain, wallet: bdk::Wallet<D>,
+		blockchain: BlockchainType, wallet: bdk::Wallet<D>,
 		runtime: Arc<RwLock<Option<tokio::runtime::Runtime>>>, logger: L,
 	) -> Self {
 		let inner = Mutex::new(wallet);
